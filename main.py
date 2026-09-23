@@ -1,5 +1,9 @@
 import requests
 import streamlit as st
+from pathlib import Path
+
+
+IMAGE_DIR = Path(__file__).resolve().parent / "images"
 
 
 def get_weather(city):
@@ -46,7 +50,7 @@ def display_temp(data):
         st.metric(label="Average Temperature", value=temp)
 
     with col1:
-        st.image("images\\temp_image.png", width=100)
+        st.image(str(IMAGE_DIR / "temp_image.png"), width=100)
 
 
 def display_wind(data):
@@ -66,7 +70,7 @@ def display_wind(data):
         st.metric(label="Pressure", value=pressure)
 
     with col1:
-        st.image("images\\wind_image.png", width=100)
+        st.image(str(IMAGE_DIR / "wind_image.png"), width=100)
 
 
 def interface(data):
