@@ -1,13 +1,19 @@
+import os
+from dotenv import load_dotenv
+
 from pathlib import Path
 
 import requests
 import streamlit as st
 
+
+load_dotenv()
+
 IMAGE_DIR = Path(__file__).resolve().parent / "images"
 
 
 def get_weather(city):
-    api_key = "dedb55e45cc1a598eea144b3012e0ae9"
+    api_key = os.getenv("api_key")
     base_url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
 
     response = requests.get(base_url)
