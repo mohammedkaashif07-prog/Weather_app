@@ -1,7 +1,7 @@
-import requests
-import streamlit as st
 from pathlib import Path
 
+import requests
+import streamlit as st
 
 IMAGE_DIR = Path(__file__).resolve().parent / "images"
 
