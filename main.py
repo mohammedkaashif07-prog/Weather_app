@@ -1,42 +1,74 @@
 import os
-from dotenv import load_dotenv
-
 from pathlib import Path
 
 import requests
 import streamlit as st
-
+from dotenv import load_dotenv
 
 load_dotenv()
 
 IMAGE_DIR = Path(__file__).resolve().parent / "images"
+API_BASE_URL = "https://api.openweathermap.org/data/2.5"
+
+
+def get_api_key():
+    api_key = os.getenv("OPENWEATHER_API_KEY") or os.getenv("api_key")
+    if not api_key:
+        try:
+            api_key = st.secrets["OPENWEATHER_API_KEY"]
+        except (KeyError, FileNotFoundError):
+            api_key = None
+
+    if not api_key:
+        st.error("Set OPENWEATHER_API_KEY in your environment or Streamlit secrets.")
+        st.stop()
+
+    return api_key
+
+
+def fetch_weather(endpoint, city):
+    url = f"{API_BASE_URL}/{endpoint}"
+    params = {
+        "q": city,
+        "appid": get_api_key(),
+        "units": "metric",
+    }
+
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except requests.HTTPError as error:
+        status_code = error.response.status_code if error.response else None
+        if status_code == 404:
+            st.error("City not found. Check the spelling and try again.")
+        elif status_code == 401:
+            st.error("The OpenWeather API key is invalid or not active.")
+        else:
+            st.error("The weather service returned an error. Please try again.")
+    except (requests.RequestException, ValueError):
+        st.error(
+            "Could not retrieve weather data. Check your connection and try again."
+        )
+
+    return None
 
 
 def get_weather(city):
-    api_key = os.getenv("api_key")
-    base_url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
-
-    response = requests.get(base_url)
-
-    if response.status_code == 200:
-        data = response.json()
-        return data
-    else:
-        st.error("Enter a valid city")
-        st.stop()
+    return fetch_weather("weather", city)
 
 
 def get_forecast(city):
-    api_key = "dedb55e45cc1a598eea144b3012e0ae9"
-    base_url = f"https://api.openweathermap.org/data/2.5/forecast?q={city}&appid={api_key}&units=metric"
+    data = fetch_weather("forecast", city)
+    if data is None:
+        return None
 
-    response = requests.get(base_url)
+    forecast = data.get("list") if isinstance(data, dict) else None
+    if not isinstance(forecast, list) or len(forecast) <= 8:
+        st.error("Forecast data is unavailable for this city.")
+        return None
 
-    try:
-        data = response.json()
-        return data
-    except KeyError:
-        st.error("Something went wrong.")
+    return forecast[8]
 
 
 def display_temp(data):
@@ -95,16 +127,15 @@ def main():
     st.title("WEATHER APP")
 
     city = st.text_input("Enter the city name ").lower().strip()
+    select = st.pills("Select", ["Today", "Tomorrow"], default="Today")
 
-    weather_data = get_weather(city)
-    forecast_data = get_forecast(city)["list"][8]
+    if not city:
+        st.info("Enter a city to see the weather.")
+        return
 
-    select = st.pills("Select", ["Today", "Tomorrow"])
-
-    if select == "Today":
+    weather_data = get_weather(city) if select == "Today" else get_forecast(city)
+    if weather_data:
         interface(weather_data)
-    elif select == "Tomorrow":
-        interface(forecast_data)
 
 
 if __name__ == "__main__":

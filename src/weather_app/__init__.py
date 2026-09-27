@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from weather-app!")
+"""Weather app package."""
