@@ -1,9 +1,23 @@
 from pathlib import Path
 
 import pytest
+import requests
 from streamlit.testing.v1 import AppTest
 
 import main
+
+
+def test_http_error_includes_provider_reason_without_request_url():
+    response = requests.Response()
+    response.status_code = 400
+    response.url = "https://api.openweathermap.org/?appid=secret"
+    response._content = b'{"message":"invalid city query"}'
+    error = requests.HTTPError(response=response)
+
+    message = main.describe_http_error(error)
+
+    assert message == "Weather service error (HTTP 400): invalid city query"
+    assert "secret" not in message
 
 
 @pytest.mark.parametrize(

@@ -44,17 +44,34 @@ def _request_weather(endpoint, city, api_key):
     return response.json()
 
 
+def describe_http_error(error):
+    response = error.response
+    status_code = response.status_code if response is not None else None
+
+    if status_code == 404:
+        return "City not found. Check the spelling and try again."
+    if status_code == 401:
+        return "The OpenWeather API key is invalid or not active."
+    if status_code == 429:
+        return "OpenWeather rate limit reached. Please try again shortly."
+
+    try:
+        body = response.json() if response is not None else {}
+    except ValueError:
+        body = {}
+    detail = body.get("message") if isinstance(body, dict) else None
+
+    if status_code is not None:
+        message = f"Weather service error (HTTP {status_code})"
+        return f"{message}: {detail}" if detail else message
+    return "The weather service returned an error. Please try again."
+
+
 def fetch_weather(endpoint, city):
     try:
         return _request_weather(endpoint, city, get_api_key())
     except requests.HTTPError as error:
-        status_code = error.response.status_code if error.response else None
-        if status_code == 404:
-            st.error("City not found. Check the spelling and try again.")
-        elif status_code == 401:
-            st.error("The OpenWeather API key is invalid or not active.")
-        else:
-            st.error("The weather service returned an error. Please try again.")
+        st.error(describe_http_error(error))
     except (requests.RequestException, ValueError):
         st.error(
             "Could not retrieve weather data. Check your connection and try again."
