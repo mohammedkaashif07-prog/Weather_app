@@ -1,4 +1,5 @@
 import os
+from datetime import UTC, datetime, timedelta
 
 import requests
 import streamlit as st
@@ -84,14 +85,41 @@ def get_weather(city):
     return fetch_weather("weather", city)
 
 
+def select_tomorrow_forecast(data, now=None):
+    forecast = data.get("list") if isinstance(data, dict) else None
+    if not isinstance(forecast, list):
+        return None
+
+    city_data = data.get("city", {})
+    city_offset = timedelta(seconds=city_data.get("timezone", 0))
+    local_now = (now or datetime.now(UTC)) + city_offset
+    tomorrow = local_now.date() + timedelta(days=1)
+    candidates = []
+
+    for item in forecast:
+        timestamp = item.get("dt")
+        if not isinstance(timestamp, (int, float)):
+            continue
+
+        local_time = datetime.fromtimestamp(timestamp, UTC) + city_offset
+        if local_time.date() == tomorrow:
+            minutes_from_noon = abs(local_time.hour * 60 + local_time.minute - 720)
+            candidates.append((minutes_from_noon, item))
+
+    if not candidates:
+        return None
+
+    return min(candidates, key=lambda candidate: candidate[0])[1]
+
+
 def get_forecast(city):
     data = fetch_weather("forecast", city)
     if data is None:
         return None
 
-    forecast = data.get("list") if isinstance(data, dict) else None
-    if not isinstance(forecast, list) or len(forecast) <= 8:
-        st.error("Forecast data is unavailable for this city.")
+    forecast = select_tomorrow_forecast(data)
+    if forecast is None:
+        st.error("Tomorrow's forecast is unavailable for this city.")
         return None
 
     return forecast[8]
@@ -103,7 +131,7 @@ def get_weather_for_day(city, forecast_day):
     return get_forecast(city)
 
 
-def display_weather(data):
+def display_weather(data, forecast_day):
     condition = data.get("weather", [{}])[0]
     measurements = data.get("main", {})
     city = data.get("name", "Selected location")
@@ -112,7 +140,8 @@ def display_weather(data):
 
     st.subheader(location)
     description = str(condition.get("description", "Conditions unavailable"))
-    st.caption(description.capitalize())
+    period = "Current conditions" if forecast_day == "Today" else "Tomorrow's forecast"
+    st.caption(f"{period} · {description.capitalize()}")
 
     with st.container(border=True):
         summary, icon_column = st.columns([3, 1], vertical_alignment="center")
@@ -128,7 +157,7 @@ def display_weather(data):
                 st.image(
                     WEATHER_ICON_URL.format(icon=icon),
                     width=104,
-                    caption="Current conditions",
+                    caption="Weather condition",
                 )
 
     st.subheader("Conditions")
@@ -176,7 +205,7 @@ def main():
     with st.spinner(f"Checking the forecast for {city}..."):
         weather_data = get_weather_for_day(city, forecast_day)
     if weather_data is not None:
-        display_weather(weather_data)
+        display_weather(weather_data, forecast_day)
         st.caption("Weather data provided by OpenWeather.")
 
 

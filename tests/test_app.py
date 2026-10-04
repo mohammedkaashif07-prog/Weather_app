@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,21 @@ def test_http_error_includes_provider_reason_without_request_url():
 
     assert message == "Weather service error (HTTP 400): invalid city query"
     assert "secret" not in message
+
+
+def test_tomorrow_forecast_uses_city_local_date_and_nearest_noon():
+    start = datetime(2026, 10, 4, 21, tzinfo=UTC)
+    forecast = [
+        {"dt": int((start + timedelta(hours=3 * index)).timestamp()), "slot": index}
+        for index in range(17)
+    ]
+    data = {"city": {"timezone": 3600}, "list": forecast}
+    now = datetime(2026, 10, 4, 23, 30, tzinfo=UTC)
+
+    result = main.select_tomorrow_forecast(data, now=now)
+
+    assert forecast[8]["slot"] == 8
+    assert result["slot"] == 13
 
 
 @pytest.mark.parametrize(
