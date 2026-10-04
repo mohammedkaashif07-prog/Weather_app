@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 
 import requests
 import streamlit as st
@@ -7,8 +6,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-IMAGE_DIR = Path(__file__).resolve().parent / "images"
 API_BASE_URL = "https://api.openweathermap.org/data/2.5"
+WEATHER_ICON_URL = "https://openweathermap.org/img/wn/{icon}@4x.png"
+
+st.set_page_config(
+    page_title="Weatherline | Local forecast",
+    page_icon=":material/wb_sunny:",
+    layout="centered",
+)
 
 
 def get_api_key():
@@ -26,18 +31,22 @@ def get_api_key():
     return api_key
 
 
-def fetch_weather(endpoint, city):
+@st.cache_data(ttl=600, max_entries=128, show_spinner=False)
+def _request_weather(endpoint, city, api_key):
     url = f"{API_BASE_URL}/{endpoint}"
     params = {
         "q": city,
-        "appid": get_api_key(),
+        "appid": api_key,
         "units": "metric",
     }
+    response = requests.get(url, params=params, timeout=10)
+    response.raise_for_status()
+    return response.json()
 
+
+def fetch_weather(endpoint, city):
     try:
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        return response.json()
+        return _request_weather(endpoint, city, get_api_key())
     except requests.HTTPError as error:
         status_code = error.response.status_code if error.response else None
         if status_code == 404:
@@ -71,71 +80,87 @@ def get_forecast(city):
     return forecast[8]
 
 
-def display_temp(data):
-    temp = f"{data['main']['temp']}°"
-    max_temp = f"{data['main']['temp_max']}°"
-    min_temp = f"{data['main']['temp_min']}°"
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col2:
-        st.metric(label="Maximum Temperature", value=max_temp)
-
-    with col3:
-        st.metric(label="Minimum Temperature", value=min_temp)
-
-    with col4:
-        st.metric(label="Average Temperature", value=temp)
-
-    with col1:
-        st.image(str(IMAGE_DIR / "temp_image.png"), width=100)
+def get_weather_for_day(city, forecast_day):
+    if forecast_day == "Today":
+        return get_weather(city)
+    return get_forecast(city)
 
 
-def display_wind(data):
-    wind_speed = data["wind"]["speed"]
-    humidity = data["main"]["humidity"]
-    pressure = data["main"]["pressure"]
+def display_weather(data):
+    condition = data.get("weather", [{}])[0]
+    measurements = data.get("main", {})
+    city = data.get("name", "Selected location")
+    country = data.get("sys", {}).get("country")
+    location = f"{city}, {country}" if country else city
 
-    col1, col2, col3, col4 = st.columns(4)
+    st.subheader(location)
+    description = str(condition.get("description", "Conditions unavailable"))
+    st.caption(description.capitalize())
 
-    with col2:
-        st.metric(label="Wind Speed", value=wind_speed)
+    with st.container(border=True):
+        summary, icon_column = st.columns([3, 1], vertical_alignment="center")
+        with summary:
+            st.metric(
+                "Temperature",
+                f"{measurements.get('temp', '--')} °C",
+                delta=f"Feels like {measurements.get('feels_like', '--')} °C",
+            )
+        with icon_column:
+            icon = condition.get("icon")
+            if icon:
+                st.image(
+                    WEATHER_ICON_URL.format(icon=icon),
+                    width=104,
+                    caption="Current conditions",
+                )
 
-    with col3:
-        st.metric(label="Humidity", value=humidity)
-
-    with col4:
-        st.metric(label="Pressure", value=pressure)
-
-    with col1:
-        st.image(str(IMAGE_DIR / "wind_image.png"), width=100)
-
-
-def interface(data):
-    if data:
-        description = str(data["weather"][0]["description"])
-        feels_like = f"{data['main']['feels_like']}°"
-
-        display_temp(data)
-
-        st.info(f"{description.capitalize()} / Feels like : {feels_like}")
-
-        display_wind(data)
+    st.subheader("Conditions")
+    wind_speed = data.get("wind", {}).get("speed", "--")
+    columns = st.columns(3)
+    columns[0].metric("Humidity", f"{measurements.get('humidity', '--')}%")
+    columns[1].metric("Wind", f"{wind_speed} m/s")
+    columns[2].metric("Pressure", f"{measurements.get('pressure', '--')} hPa")
 
 
 def main():
-    st.title("WEATHER APP")
+    st.title("Weatherline", icon=":material/wb_sunny:")
+    st.caption("A clear view of the weather where you are or where you're headed.")
 
-    city = st.text_input("Enter the city name ").lower().strip()
-    select = st.pills("Select", ["Today", "Tomorrow"], default="Today")
+    with st.form("weather_search"):
+        city_column, forecast_column, submit_column = st.columns(
+            [2.2, 1.2, 0.8], vertical_alignment="bottom"
+        )
+        with city_column:
+            city = st.text_input("City", placeholder="e.g. Copenhagen")
+        with forecast_column:
+            forecast_day = st.segmented_control(
+                "Forecast",
+                ["Today", "Tomorrow"],
+                default="Today",
+                label_visibility="visible",
+            )
+        with submit_column:
+            submitted = st.form_submit_button(
+                "Search", type="primary", icon=":material/search:"
+            )
 
-    if not city:
-        st.info("Enter a city to see the weather.")
+    if not submitted:
+        st.info(
+            "Search for a city to see its local forecast.",
+            icon=":material/location_on:",
+        )
         return
 
-    weather_data = get_weather(city) if select == "Today" else get_forecast(city)
-    if weather_data:
-        interface(weather_data)
+    city = city.strip()
+    if not city:
+        st.warning("Enter a city name to continue.", icon=":material/edit_location:")
+        return
+
+    with st.spinner(f"Checking the forecast for {city}..."):
+        weather_data = get_weather_for_day(city, forecast_day)
+    if weather_data is not None:
+        display_weather(weather_data)
+        st.caption("Weather data provided by OpenWeather.")
 
 
 if __name__ == "__main__":
